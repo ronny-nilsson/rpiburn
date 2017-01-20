@@ -26,7 +26,7 @@
 //-------------------------------------------------------------
 #define CHILD_STACK_SIZE		(4 * 1024)
 #define CHILD_SPAWN_DELAY		150												// Delay in ms between spawned childrens
-#define MAX_LOAD_TIME		3820													// Max time in ms we run with full load power consumption
+#define MAX_LOAD_TIME			750												// Max time in ms we run with full load power consumption
 
 
 struct child_t {
@@ -84,7 +84,7 @@ nCpus=1;
 		if(!childs[i].stack) return -1;
 	}
 	childs[nCpus].consumer = dump_sdcard;
-childs[nCpus].consumer = idle_cpu;
+	//childs[nCpus].consumer = idle_cpu;										// For testing; do nothing
 
 	return 0;
 }
