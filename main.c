@@ -44,25 +44,25 @@ static int sigFd = -1;															// Signal file descriptor
 // Initialize signals. We use a synchronous filedescriptor
 // for accepting signal as oppose to an asynchronous handler.
 static int signal_init(void) {
-	sigset_t sigsAccept;
+	sigset_t sigsBlk;
 	int res;
 
-	sigemptyset(&sigsAccept);
-	sigaddset(&sigsAccept, SIGCHLD);
-	sigaddset(&sigsAccept, SIGHUP);
-	sigaddset(&sigsAccept, SIGINT);
-	sigaddset(&sigsAccept, SIGQUIT);
-	sigaddset(&sigsAccept, SIGTERM);
+	sigemptyset(&sigsBlk);
+	sigaddset(&sigsBlk, SIGCHLD);
+	sigaddset(&sigsBlk, SIGHUP);
+	sigaddset(&sigsBlk, SIGINT);
+	sigaddset(&sigsBlk, SIGQUIT);
+	sigaddset(&sigsBlk, SIGTERM);
 
 	/* Block signals so that they aren't handled
 	 * according to their default dispositions. */
- 	res = sigprocmask(SIG_BLOCK, &sigsAccept, NULL);
+	res = sigprocmask(SIG_BLOCK, &sigsBlk, NULL);
 	if(res == -1) {
 		perror("Error sigprocmask");
 		return -1;
 	}
 
-	sigFd = signalfd(-1, &sigsAccept, 0);
+	sigFd = signalfd(-1, &sigsBlk, 0);
 	if(sigFd == -1) {
 		perror("Error opening signal fd");
 		return -1;
@@ -174,6 +174,7 @@ int main(void) {
 
  	res = 0;
 	do_exit = 0;
+	printf("Preparing...\n");
 	if(!res) update_current_time();
 	if(!res) res = signal_init();
 	if(!res) res = vchiq_init();
