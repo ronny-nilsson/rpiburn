@@ -7,7 +7,7 @@ name := rpiburn
 
 
 CFLAGS += $(CROSS_CFLAGS) -O2 -g -Wall -std=gnu99
-CFLAGS += -D_GNU_SOURCE -D_BSD_SOURCE -D_REENTRANT
+CFLAGS += -D_GNU_SOURCE -D_BSD_SOURCE -D_REENTRANT -pthread
 CFLAGS += -fno-reorder-blocks -fno-reorder-blocks-and-partition
 CFLAGS += -fno-toplevel-reorder -fno-crossjumping -falign-functions
 
@@ -27,7 +27,7 @@ $(prefix)/usr/sbin/$(name): $(name)
 
 
 $(name): $(OBJECTS)
-	$(CC) $(strip $(CFLAGS)) -o $@ $(OBJECTS) -lrt
+	$(CC) $(strip $(CFLAGS)) -o $@ $(OBJECTS) -lpthread -lrt
 
 
 %.o: %.c Makefile

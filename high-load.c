@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <sys/resource.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include "high-load.h"
 #include "main.h"
@@ -24,21 +25,26 @@
 
 
 //-------------------------------------------------------------
-#define CHILD_STACK_SIZE		(4 * 1024)
 #define CHILD_SPAWN_DELAY		150												// Delay in ms between spawned childrens
 #define MAX_LOAD_TIME			750												// Max time in ms we run with full load power consumption
 
+enum child_state_t {
+	THREAD_NONE,
+	THREAD_STARTUP,
+	THREAD_RUNNING,
+	THREAD_ENDING,
+	THREAD_HALTED
+};
 
 struct child_t {
-	int tid;
+	volatile enum child_state_t state;											// The child thread state
+	int tid;																	// Linux PID of thread
+	pthread_t thread;															// Posix thread ID
 	int index;																	// Array index
-	cpu_set_t cpuMask;
-	int hasStarted;
-	int hasExited;
+	cpu_set_t cpuMask;															// Affinity
 	int exitStatus;																// Return code after process exit
 
 	int (*consumer)(struct child_t *me);										// Power consumer for specific thread
-	uint8_t *stack;																// Process stack
 };
 
 
@@ -46,9 +52,9 @@ struct child_t {
 static struct child_t *childs;
 static struct timespec spawnTimer;												// When to spawn a child next time
 static int maxChilds;															// Number of childs to spawn
-static int nChilds;																// Number of childs we have spawned so far
 static int hasFullLoad;															// True when we are consuming maximum power
 static struct timespec loadTimer;
+static pthread_t parentThread;													// Posix thread ID of parent
 
 
 //-------------------------------------------------------------
@@ -66,25 +72,24 @@ int high_load_init(void) {
 
 	timer_set(&spawnTimer, CHILD_SPAWN_DELAY);
 	timer_set(&loadTimer, 9999999);
+	parentThread = pthread_self();
 
 	nCpus = sysconf(_SC_NPROCESSORS_ONLN);
-nCpus=1;
 	//printf("System has %d processors\n", nCpus);
 	maxChilds = nCpus + 1;
 
 	// Prepare threads
 	childs = calloc(maxChilds, sizeof(struct child_t));
 	for(i = 0; i < maxChilds; i++) {
+		childs[i].state = THREAD_NONE;
 		childs[i].index = i;
 		CPU_ZERO(&childs[i].cpuMask);
 		CPU_SET(i % nCpus, &childs[i].cpuMask);
 		childs[i].exitStatus = -1;
 		childs[i].consumer = burn_cpu_a7;
-		childs[i].stack = malloc(CHILD_STACK_SIZE);
-		if(!childs[i].stack) return -1;
 	}
 	childs[nCpus].consumer = dump_sdcard;
-	//childs[nCpus].consumer = idle_cpu;										// For testing; do nothing
+	//childs[nCpus].state = THREAD_HALTED;										// Disabled thread; for testing
 
 	return 0;
 }
@@ -111,7 +116,7 @@ int burn_cpu(struct child_t *me) {
 //-------------------------------------------------------------
 // Power consumer: null dummy. Do nothing (for test)
 int idle_cpu(struct child_t *me) {
-	return 0;
+	return EXIT_SUCCESS;
 }
 
 
@@ -175,17 +180,64 @@ int dump_sdcard(struct child_t *me) {
 
 
 //-------------------------------------------------------------
+// Read child state twice to a local variable to
+// prevent race conditions between threads while
+// still avoiding mutexes.
+static const enum child_state_t child_state(const int idx) {
+	enum child_state_t state[2];
+
+	do {
+		state[0] = childs[idx].state;
+		pthread_yield();
+		state[1] = childs[idx].state;
+	} while(state[0] != state[1]);
+
+	return state[0];
+}
+
+
+
+//-------------------------------------------------------------
+// Cleanup handler for childrens. Executed when
+// the thread is about to terminate.
+static void child_exit_clean(void *arg) {
+	struct child_t *me = arg;
+	int i;
+
+	// Slow throttle when high load test has finished
+	for(i = 0; i < me->index * 50; i++) pthread_yield();
+
+	//printf("Child %lu exits\n", me->thread);
+	//fflush(NULL);
+
+	/* Wake up parent from sleep so it can collect
+	 * our exit code. We would have preferrd the kernel
+	 * to send a signal instead, as with fork(). */
+	me->state = THREAD_ENDING;
+	pthread_kill(parentThread, SIGCHLD);
+}
+
+
+
+//-------------------------------------------------------------
 // main() of childrens. Memory and open files are
 // shared with the parent.
-int child_main(void *arg) {
+static void* child_main(void *arg) {
 	struct sched_param schedParam;
 	struct child_t *me;
-	int res , i;
+	int res;
 
-	// Wait for parent to write my tid into global struct
+	/* Wait for parent to write my thread ID into global struct.
+	 * Read it twice to prevent race conditions between threads. */
 	me = (struct child_t*) arg;
-	me->hasStarted = 1;
-	while(me->tid != syscall(SYS_gettid)) sched_yield();
+	while(pthread_self() != me->thread && pthread_self() != me->thread) {
+		pthread_yield();
+	}
+	me->tid = syscall(SYS_gettid);
+	me->state = THREAD_RUNNING;
+	pthread_cleanup_push(child_exit_clean, me);
+	//printf("Child %lu %d has started\n", me->thread, me->tid);
+	//fflush(NULL);
 
 	// Possibly wait for scheduler to move us to correct cpu
 	while(!CPU_ISSET(sched_getcpu(), &me->cpuMask)) usleep(0);
@@ -194,25 +246,23 @@ int child_main(void *arg) {
 	 * impact on the system if it has other important
 	 * applications running. */
 	schedParam.sched_priority = 0;
-	res = sched_setscheduler(me->tid, SCHED_BATCH, &schedParam);
+	res = pthread_setschedparam(me->thread, SCHED_BATCH, &schedParam);
 	if(res == -1) {
 		perror("Error setting low priority class");
-		return EXIT_FAILURE;
+		pthread_exit((void*) EXIT_FAILURE);
 	}
 	res = setpriority(PRIO_PROCESS, me->tid, 18);
 	if(res == -1) {
 		perror("Error setting child as nice prio");
-		return EXIT_FAILURE;
+		pthread_exit((void*) EXIT_FAILURE);
 	}
 	
+	// Run the power consumer algorithm
 	srandom(me->tid + time(NULL));
-
 	if(me->consumer) res = me->consumer(me);
 
-	// Slow throttle when high load test has finished
-	for(i = 0; i < me->index * 100; i++) sched_yield();
-
-	return res;
+	pthread_cleanup_pop(1);
+	pthread_exit((void*) res);
 }
 
 
@@ -220,38 +270,44 @@ int child_main(void *arg) {
 //-------------------------------------------------------------
 // Create a new process which shares memory and
 // open files with the parent.
-static int spawn_child(void) {
-	int res;
+static int child_spawn(void) {
+	pthread_attr_t attr;
+	int res, cIdx;
 
-	/* Move parent to next cpu. The child will
-	 * inherit and run on very same cpu. */
-	res = sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t),
-		&childs[nChilds].cpuMask);
+	// Find next free child index in list
+	for(cIdx = 0; cIdx < maxChilds &&
+		child_state(cIdx) != THREAD_NONE; cIdx++);
+	if(cIdx == maxChilds) return -1;
+
+	pthread_attr_init(&attr);
+
+	// Set the CPU the child will run on
+	pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+	res = pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t),
+		&childs[cIdx].cpuMask);
 	if(res == -1) {
-		perror("Error, couldn't set cpu affinity");
+		perror("Error, couldn't set child cpu affinity");
 		return -1;
 	}
-	fflush(NULL);
-	sched_yield();
 
-	// Clone a new child process
-	childs[nChilds].tid = clone(child_main, childs[nChilds].stack + 
-		CHILD_STACK_SIZE, CLONE_FS | CLONE_FILES | CLONE_VM | SIGCHLD,
-		&childs[nChilds]);
-	if(childs[nChilds].tid == -1) {
-		childs[nChilds].tid = 0;
+	// Start a new child process
+	childs[cIdx].state = THREAD_STARTUP;
+	res = pthread_create(&childs[cIdx].thread, &attr,
+		child_main, &childs[cIdx]);
+	if(res == -1) {
 		perror("Error spawning a child");
 		return -1;
 	}
-	else if(childs[nChilds].tid == 0) {
-		printf("Error; invalid child tid 0\n");
-		return -1;
+	//printf("Parent %lu spawned %lu\n", pthread_self(), childs[cIdx].thread);
+	//fflush(NULL);
+
+	// Wait for the child to begin executing or terminate instantly
+	while(child_state(cIdx) != THREAD_RUNNING &&
+			child_state(cIdx) != THREAD_ENDING) {
+		pthread_yield();
 	}
 
-	// Wait for the child to begin executing
-	while(!childs[nChilds].hasStarted) sched_yield();
-	fflush(NULL);
-	nChilds++;
+	pthread_attr_destroy(&attr);
 
 	return 0;
 }
@@ -259,26 +315,28 @@ static int spawn_child(void) {
 
 
 //-------------------------------------------------------------
-// Poll childrens; has anyone exited? Then collect their
-// exit status to prevent them from becoming a zombie.
+// Has any child exited? Then collect their exit
+// status to prevent them from becoming a zombie.
 static int collect_child_exit(void) {
+	void *exitVal;
 	int res, i;
 
 	for(i = 0; i < maxChilds; i++) {
-		if(!childs[i].tid || childs[i].hasExited) continue;
+		if(child_state(i) != THREAD_ENDING) continue;
 
-		res = waitpid(childs[i].tid, &childs[i].exitStatus, WNOHANG | __WALL);
+		res = pthread_join(childs[i].thread, &exitVal);
 		if(res == -1) {
 			perror("Error collecting child exit status");
 		}
-		else if(res == childs[i].tid) {
-			free(childs[i].stack);
-			childs[i].stack = NULL;
-			childs[i].hasExited = 1;
+		else if(res == 0) {
+			childs[i].state = THREAD_HALTED;
+			childs[i].exitStatus = (int) exitVal;
+			//printf("Collected child %lu exit status %d\n",
+			//	childs[i].thread, childs[i].exitStatus);
 			maxSleep(0);
-			if(WEXITSTATUS(childs[i].exitStatus)) {
-				printf("Child %d exit error %d\n", childs[i].tid,
-				WEXITSTATUS(childs[i].exitStatus));
+			if(childs[i].exitStatus) {
+				printf("Child %lu exit error %d\n", childs[i].thread,
+					childs[i].exitStatus);
 				return -1;
 			}
 		}
@@ -295,7 +353,14 @@ int isAnyChildAlive(void) {
 	int i;
 
 	for(i = 0; i < maxChilds; i++) {
-		if(childs[i].tid && !childs[i].hasExited) return 1;
+		switch(child_state(i)) {
+			case THREAD_STARTUP:
+			case THREAD_RUNNING:
+			case THREAD_ENDING:
+				return 1;
+			default:
+				break;
+		}
 	}
 
 	return 0;
@@ -306,9 +371,20 @@ int isAnyChildAlive(void) {
 //-------------------------------------------------------------
 // Returns true when all childrens have been started
 int hasAllChildsStarted(void) {
-	return (nChilds == maxChilds);
-}
+	int i;
 
+	for(i = 0; i < maxChilds; i++) {
+		switch(child_state(i)) {
+			case THREAD_NONE:
+			case THREAD_STARTUP:
+				return 0;
+			default:
+				break;
+		}
+	}
+
+	return 1;
+}
 
 
 //-------------------------------------------------------------
@@ -316,12 +392,17 @@ int hasAllChildsStarted(void) {
 int kill_remaining_childs(void) {
 	int i;
 
-	// Return true if any child is still alive
 	for(i = 0; i < maxChilds; i++) {		
-		if(childs[i].tid && !childs[i].hasExited) {
-			if(syscall(SYS_tkill, childs[i].tid, SIGKILL)) {
-				perror("Error killing child hard");
-			}
+		switch(child_state(i)) {
+			case THREAD_STARTUP:
+			case THREAD_RUNNING:
+			case THREAD_ENDING:
+				if(pthread_kill(childs[i].thread, SIGKILL)) {
+					perror("Error killing child hard");
+				}
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -363,7 +444,7 @@ int high_load_manager(void) {
 				 * every 100 ms. Plus there might be some
 				 * capacitances to drain. */
 				if(timer_timeout(&spawnTimer)) {
-					res = spawn_child();
+					res = child_spawn();
 					timer_set(&spawnTimer, CHILD_SPAWN_DELAY);
 				} 
 				maxSleep(timer_remaining(&spawnTimer));
