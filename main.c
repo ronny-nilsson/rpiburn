@@ -151,6 +151,9 @@ static int ioExchange(void) {
 		return 0;
 	}
 
+	/* Any posix signal waiting? We need to handle them
+	 * before collecting any child exit status to
+	 * prevent race conditions. */
 	if(sigFd >= 0 && sigFd < FD_SETSIZE && FD_ISSET(sigFd, &rfds)) {
 		res = signal_manager();
 	}
