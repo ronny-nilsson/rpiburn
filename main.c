@@ -1,7 +1,11 @@
 
 /* Program for testing the board power supply. We load
- * the CPU to the max (to consume lots of power) while
- * we monitor the board brown out sensor.
+ * the system to the max (to consume lots of power)
+ * while we monitor the board brown out sensor.
+ *
+ * Measured values (without external peripherals)
+ *   Pi model    Current
+ *      2B       650 mA
  *
  * Nard Linux SDK
  * http://www.arbetsmyra.dyndns.org/nard
