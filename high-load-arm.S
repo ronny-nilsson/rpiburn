@@ -90,8 +90,8 @@ burn_cpu_a7:
 		ldr		r7, [r5, #1]													@ Poll do_exit, time to exit loop?
 		beq		1b
 
-		movne	r0, #0
-		moveq	r0, #1
+		movne	r0, #0															@ EXIT_SUCCESS
+		moveq	r0, #1															@ EXIT_FAILURE
 		pop		{r4, r5, r6, r7, fp, pc}										@ Epilogue
 		.endfunc
 
