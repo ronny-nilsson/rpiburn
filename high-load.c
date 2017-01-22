@@ -105,7 +105,7 @@ int burn_cpu(struct child_t *me) {
 	// Burn cpu! :)
 	while(!do_exit) {
 		dummy = random();
-		sched_yield();
+		pthread_yield();
 	}
 
 	return EXIT_SUCCESS;
@@ -168,7 +168,7 @@ int dump_sdcard(struct child_t *me) {
 			}
 		}
 
-		sched_yield();
+		pthread_yield();
 	} while(!do_exit);
 
 	close(sdFd);
@@ -225,7 +225,8 @@ static void child_exit_clean(void *arg) {
 static void* child_main(void *arg) {
 	struct sched_param schedParam;
 	struct child_t *me;
-	int res;
+	sigset_t sigsBlk;
+	int res = 0;
 
 	/* Wait for parent to write my thread ID into global struct.
 	 * Read it twice to prevent race conditions between threads. */
@@ -254,6 +255,16 @@ static void* child_main(void *arg) {
 	res = setpriority(PRIO_PROCESS, me->tid, 18);
 	if(res == -1) {
 		perror("Error setting child as nice prio");
+		pthread_exit((void*) EXIT_FAILURE);
+	}
+
+	// Block most signals to let the parent handle them
+	res |= sigfillset(&sigsBlk);
+	res |= sigdelset(&sigsBlk, SIGUSR1);
+	res |= sigdelset(&sigsBlk, SIGUSR2);
+	res |= pthread_sigmask(SIG_BLOCK, &sigsBlk, NULL);
+	if(res == -1) {
+		perror("Error setting child signal mask");
 		pthread_exit((void*) EXIT_FAILURE);
 	}
 	
