@@ -419,12 +419,16 @@ int high_load_manager(void) {
 
 	/* When all childrens have started and
 	 * consume max power; start a timer. We only
-	 * run with full load for a limited time. */
+	 * run with full load for a limited time.
+	 * If the we for any reason gets interrupted
+	 * the program will exit with a failure
+	 * return code. */
 	if(timer_timeout(&loadTimer)) {
 		do_exit = 1;
 	}
 	else {
 		maxSleep(timer_remaining(&loadTimer));
+		if(do_exit) res = -1;
 	}
 
 	if(!res && !do_exit) {
@@ -453,7 +457,7 @@ int high_load_manager(void) {
 	}
 
 	// Check if any child has exited
-	if(!res) res = collect_child_exit();
+	if(collect_child_exit()) res = -1;
 
 	return res;
 }
