@@ -97,7 +97,7 @@ static int signal_manager(void) {
 			case SIGHUP:
 			case SIGQUIT:
 			case SIGTERM:
-				printf("Time to exit\n");
+				//printf("Time to exit\n");
 				do_exit = 1;
 				break;
 
