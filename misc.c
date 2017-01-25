@@ -12,6 +12,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <regex.h>
 
 #include "misc.h"
 #include "main.h"
@@ -22,6 +23,11 @@
 #error Missing monotonic clock support
 #endif
 
+#define REGEX_ERR_SIZE		1024
+
+
+//-------------------------------------------------------------
+static char regexErrBuff[REGEX_ERR_SIZE];
 
 
 
@@ -177,3 +183,58 @@ void maxSleep(const int ms) {
 }
 
 
+
+//=============================================================
+// Search for the first text line matching a pattern in a
+// string. Works almost like the grep utility, except for no
+// substrings and only one (the first) match is returned.
+// Args:
+//   haystack      Nullterminated large string which will be searched.
+//   regExpr       Extended regular expression.
+//   matchedBegin  Returned pointer to first char of match.
+//   matchedEnd    Returned pointer to last char of match.
+// Returns 0 on match and -1 on error or no match.
+//-------------------------------------------------------------
+int grep(const char *haystack, const char *regExpr, const char **matchedBegin, const char **matchedEnd) {
+	regmatch_t match;
+	regex_t regCmp;
+	int res, i;
+
+	if(matchedBegin) *matchedBegin = NULL;
+	if(matchedEnd) *matchedEnd = NULL;
+
+	// "Compile" the regular expression
+	memset(&regCmp, 0, sizeof(regCmp));
+	res = regcomp(&regCmp, regExpr, REG_EXTENDED | REG_ICASE | REG_NEWLINE);
+	if(res) {
+		if(regerror(res, &regCmp, regexErrBuff, REGEX_ERR_SIZE) >= 0) {
+			printf("Error preparing regex %s: %s\n", regExpr, regexErrBuff);
+		}
+		return -1;
+	}
+
+	// Do search
+	memset(&match, 0, sizeof(match));
+	res = regexec(&regCmp, haystack, 1, &match, 0);
+	if(res == REG_NOMATCH) {
+		printf("No grep match\n");
+		res = -1;
+	}
+	else if(res) {
+		if(regerror(res, &regCmp, regexErrBuff, REGEX_ERR_SIZE) >= 0) {
+			printf("Error grepping regex %s: %s\n", regExpr, regexErrBuff);
+		}
+		res = -1;
+	}
+	else {
+		//printf("Found match at %d: ", match.rm_so);
+		//for(i = match.rm_so; i <= match.rm_eo; i++) putchar(haystack[i]);
+		//if(haystack[i-1] != '\n') putchar('\n');
+		if(matchedBegin) *matchedBegin = haystack + match.rm_so;
+		if(matchedEnd) *matchedEnd = haystack + match.rm_eo;
+		res = 0;
+	}
+
+	regfree(&regCmp);
+	return res;
+}

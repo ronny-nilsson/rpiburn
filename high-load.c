@@ -48,19 +48,30 @@ struct child_t {
 };
 
 
+enum cpuid_t {																	// System processor ID
+	CPU_UNKNOWN,
+	CPU_BCM2835,																// RPi 1
+	CPU_BCM2836,																// RPi 2
+	CPU_BCM2837,																// RPi 3
+};
+
+
 //-------------------------------------------------------------
 static struct child_t *childs;
 static struct timespec spawnTimer;												// When to spawn a child next time
 static int maxChilds;															// Number of childs to spawn
+static int nCpus;																// Number of processor cores in system
+static enum cpuid_t cpuId;														// System processor ID
 static int hasFullLoad;															// True when we are consuming maximum power
 static struct timespec loadTimer;
 static pthread_t parentThread;													// Posix thread ID of parent
 
 
 //-------------------------------------------------------------
-int burn_cpu(struct child_t *me);
-int idle_cpu(struct child_t *me);
+static int identify_cpu(void);
+int burn_cpu_generic(struct child_t *me);
 extern int burn_cpu_a7(struct child_t *me);
+int idle_cpu(struct child_t *me);
 int dump_sdcard(struct child_t *me);
 
 
@@ -68,17 +79,16 @@ int dump_sdcard(struct child_t *me);
 //-------------------------------------------------------------
 // Initialize high load testing
 int high_load_init(void) {
-	int nCpus, i;
+	int i;
 
 	timer_set(&spawnTimer, CHILD_SPAWN_DELAY);
 	timer_set(&loadTimer, 9999999);
 	parentThread = pthread_self();
 
-	nCpus = sysconf(_SC_NPROCESSORS_ONLN);
-	//printf("System has %d processors\n", nCpus);
-	maxChilds = nCpus + 1;
+	if(identify_cpu()) return -1;
 
 	// Prepare threads
+	maxChilds = nCpus + 1;
 	childs = calloc(maxChilds, sizeof(struct child_t));
 	for(i = 0; i < maxChilds; i++) {
 		childs[i].state = THREAD_NONE;
@@ -86,7 +96,16 @@ int high_load_init(void) {
 		CPU_ZERO(&childs[i].cpuMask);
 		CPU_SET(i % nCpus, &childs[i].cpuMask);
 		childs[i].exitStatus = -1;
-		childs[i].consumer = burn_cpu_a7;
+		switch(cpuId) {
+			case CPU_BCM2835:
+				childs[i].consumer = burn_cpu_generic;
+				break;
+			case CPU_BCM2836:
+			case CPU_BCM2837:
+			default:
+				childs[i].consumer = burn_cpu_a7;
+				break;
+		}
 	}
 	childs[nCpus].consumer = dump_sdcard;
 	//childs[nCpus].state = THREAD_HALTED;										// Disabled thread; for testing
@@ -97,9 +116,142 @@ int high_load_init(void) {
 
 
 //-------------------------------------------------------------
+// Reads the file /proc/cpuinfo into a newly created buffer
+// which the caller needs to free when finished with it.
+static int read_cpuinfo(char **buf) {
+	int res, fd, hasRdLen;
+	int bufLen;
+
+	hasRdLen = 0;
+	bufLen = 1024;
+	*buf = malloc(bufLen);
+
+	fd = open("/proc/cpuinfo", O_RDONLY);
+	if(fd == -1) {
+		perror("Error opening cpuinfo");
+		res = -1;
+		goto out;
+	}
+
+	/* Size of the file is unknown and can't be
+	 * probed since it's generated dynamically
+	 * in runtime. We read the file twice to be
+	 * able to allocate a large enough buffer.
+	 * First time just dummy read until EOF. */
+	do {
+		res = read(fd, *buf, bufLen);
+		if(res == -1) {
+			if(errno == EINTR) continue;
+			perror("Error reading cpuinfo");
+			goto out;
+		}
+
+		hasRdLen += res;
+	} while(res > 0);
+
+	// Allocate a buffer which can hold entire file.
+	bufLen = hasRdLen;
+	hasRdLen = 0;
+	*buf = realloc(*buf, bufLen);
+	memset(*buf, 0, bufLen);
+
+	if(lseek(fd, 0, SEEK_SET) == (off_t) -1) {
+		perror("Error rewinding cpuinfo");
+		res = -1;
+		goto out;
+	}
+
+	// Read a second time to fill up buffer
+	do {
+		res = read(fd, *buf + hasRdLen, bufLen - hasRdLen);
+		if(res == -1) {
+			if(errno == EINTR) continue;
+			perror("Error reading cpuinfo");
+			goto out;
+		}
+
+		hasRdLen += res;
+	} while(res > 0);
+
+	// Ensure NULL terminated string
+	(*buf)[bufLen - 1] = 0;
+
+out:
+	if(res) {
+		free(*buf);
+		*buf = NULL;
+	}
+	if(fd) close(fd);
+
+	return res;
+}
+
+
+
+//-------------------------------------------------------------
+// Identify the system processor by parsing the file
+// /proc/cpuinfo and extracting the 'CPU part' record.
+// List of values used by Raspberry Pi:
+//   BCM2708 BCM2835 ARM1176JZF-S == 0xb76
+//   BCM2709 BCM2836 Cortex-A7 MPCore == 0xc07
+//   BCM2710 BCM2837 Cortex-A53 MPCore == 0xd03
+// Common for all are 'CPU implementer' == 0x41
+static int identify_cpu(void) {
+	char *begin, *end, *buf;
+	const char *cpuName;
+	int res;
+
+	res = 0;
+	buf = NULL;
+	cpuId = CPU_UNKNOWN;
+	nCpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if(nCpus < 1) return -1;
+
+	res = read_cpuinfo(&buf);													// Fill buffer
+
+	if(!res && buf) {
+		res = grep(buf,
+			"^cpu part[[:space:]]*:[[:space:]]*(0x)?[[:xdigit:]]+$",			// Search with regular expression
+			(const char **) &begin, (const char **) &end);
+	}
+
+	if(!res && buf && begin && end) {
+		*end = 0;																// Null terminate string
+		begin = strrchr(begin, ':');											// Find filed separator
+		if(begin && sscanf(begin + 1, "%i", &res) == 1 && res > 0) cpuId = res;	// strtol() but with auto base
+
+		switch(res) {
+			case 0xb76:
+				cpuId = CPU_BCM2835;
+				cpuName = "BCM2835";
+				break;
+			case 0xc07:
+				cpuId = CPU_BCM2836;
+				cpuName = "BCM2836";
+				break;
+			case 0xd03:
+				cpuId = CPU_BCM2837;
+				cpuName = "BCM2837";
+				break;
+			default:
+				cpuId = CPU_UNKNOWN;
+				cpuName = "unknown";
+				break;
+		}
+		printf("System processor is %s\n", cpuName);
+	}
+
+	free(buf);																	// Allocated in read_cpuinfo()
+
+	return 0;
+}
+
+
+
+//-------------------------------------------------------------
 // Power consumer: generate random numbers in a loop
 // until told to exit.
-int burn_cpu(struct child_t *me) {
+int burn_cpu_generic(struct child_t *me) {
 	volatile int dummy;
 
 	// Burn cpu! :)
@@ -122,8 +274,8 @@ int idle_cpu(struct child_t *me) {
 
 
 //-------------------------------------------------------------
-// Power consumer: read the SD card from begining to
-// end in a loop until told to exit. This will make
+// Power consumer: read random locations in the SD card
+// in a loop until told to exit. This will make
 // the board consume some extra mA.
 int dump_sdcard(struct child_t *me) {
 	const int SDREAD_LEN = 4 * 1024;
@@ -185,6 +337,8 @@ int dump_sdcard(struct child_t *me) {
 // still avoiding mutexes.
 static const enum child_state_t child_state(const int idx) {
 	enum child_state_t state[2];
+
+	if(!childs || idx >= maxChilds) return THREAD_NONE;
 
 	do {
 		state[0] = childs[idx].state;

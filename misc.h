@@ -23,6 +23,7 @@ void timer_cancel(struct timespec* const t);
 int64_t diffntime(struct timespec *t1, struct timespec *t2);
 int update_current_time(void);
 void maxSleep(const int ms);
+int grep(const char *haystack, const char *regExpr, const char **matchedBegin, const char **matchedEnd);
 
 #endif // MISC_H
 
