@@ -179,11 +179,10 @@ int main(void) {
 	if(!res) res = signal_init();
 	if(!res) res = vchiq_init();
 	if(!res) res = high_load_init();
-	if(res) return EXIT_FAILURE;
 
 	// Main loop
 	timer_set(&hungTimer, MAX_TOT_TIME / 2);
-	do {
+	while(!res && !do_exit) {
 		/* Use a timer so we don't hang here
 		 * forever in case of a bug. */
 		if(timer_timeout(&hungTimer)) res = -1;
@@ -193,8 +192,7 @@ int main(void) {
 		if(hasBrownOut()) do_exit = 1;
 		if(!res) res = high_load_manager();
 		if(!res) res = ioExchange();
-	} while(!res && !do_exit);
-
+	}
 	if(res) do_exit = 1;
 	
 	/* When time to exit, wait for all childrens to die.
@@ -208,6 +206,7 @@ int main(void) {
 	}
 
 	kill_remaining_childs();
+	vchiq_close();
 
 	if(hasBrownOut()) {
 		printf("Warning, PSU brown out!\n");
