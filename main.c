@@ -5,6 +5,7 @@
  *
  * Measured values (without external peripherals)
  *   Pi model    Current
+ *      1B+      280 mA
  *      2B       650 mA
  *
  * Nard Linux SDK
@@ -174,7 +175,6 @@ int main(void) {
 
  	res = 0;
 	do_exit = 0;
-	printf("Preparing...\n");
 	if(!res) update_current_time();
 	if(!res) res = signal_init();
 	if(!res) res = vchiq_init();
