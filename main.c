@@ -27,6 +27,7 @@
 #include <assert.h>
 #include <time.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include "main.h"
 #include "misc.h"
@@ -35,11 +36,13 @@
 
 
 //-------------------------------------------------------------
-#define MAX_TOT_TIME		10000												// Max total time in ms we allow the test to run
+#define MAX_TOT_TIME		999999999											// Max total time in ms we allow the test to run
+#define DFLT_TOT_TIME		10000												// Default total time ms we allow the test to run
 
 
 //-------------------------------------------------------------
 static int sigFd = -1;															// Signal file descriptor
+static int tot_time;															// Run for this many millisecons maximum
 
 
 //-------------------------------------------------------------
@@ -115,6 +118,59 @@ static int signal_manager(void) {
 
 
 //-------------------------------------------------------------
+// Parse commandline arguments
+static int parse_args(int argc, char *argv[]) {
+	int arg, res = 0;
+
+	opterr=0;																	// Disable lib error msg's
+
+	while((arg=getopt(argc, argv, ":ht:")) != -1 && !res) {
+		switch(arg) {
+			case 'h':
+				printf("Usage: %s [options]\n", argv[0]);
+				printf("High power load testing of Raspberry Pi while ");
+				printf("monitoring system for anomalies.\n");
+				printf("\n");
+				printf("    -h          This help\n");
+				printf("    -t <msec>   Run test for <msec> milliseconds.\n");
+				res = -1;
+				break;
+
+			case 't':
+				errno = 0;
+				arg = strtol(optarg, NULL, 10);
+				if(errno || arg < 1 || arg > MAX_TOT_TIME) {
+					fprintf(stderr, "Error, invalid time argument\n");
+					res = -1;
+				}
+				else {
+					load_time = arg;
+					tot_time = arg * 2 + 3000;									// Is divided by two later and add extra
+				}																//  marging for hung task timeout.
+				break;
+
+			case ':':															// Errorhandling
+				fprintf(stderr, "Error, missing option ");						//  missing options.
+				if(isprint(optopt)) fprintf(stderr, "to -%c", optopt);
+				fprintf(stderr, "\n");
+				res = -1;
+				break;
+
+			default:															// Errorhandling
+				fprintf(stderr, "Error, unknown option ");						//  unknown options.
+				if(isprint(optopt)) fprintf(stderr, "-%c", optopt);
+				fprintf(stderr, "\n");
+				res = -1;
+				break;
+		}
+	}
+
+	return res;
+}
+
+
+
+//-------------------------------------------------------------
 // Read and write all our file descriptors
 static int ioExchange(void) {
 	struct timeval timeout;
@@ -170,19 +226,22 @@ static int ioExchange(void) {
 
 
 //-------------------------------------------------------------
-int main(void) {
+// The main
+int main(int argc, char *argv[]) {
 	struct timespec hungTimer;
 	int res;
 
  	res = 0;
 	do_exit = 0;
+	tot_time = DFLT_TOT_TIME;
 	if(!res) update_current_time();
 	if(!res) res = signal_init();
+	if(!res) res = parse_args(argc, argv);
 	if(!res) res = vchiq_init();
 	if(!res) res = high_load_init();
 
 	// Main loop
-	timer_set(&hungTimer, MAX_TOT_TIME / 2);
+	timer_set(&hungTimer, tot_time / 2);
 	while(!res && !do_exit) {
 		/* Use a timer so we don't hang here
 		 * forever in case of a bug. */
@@ -200,7 +259,7 @@ int main(void) {
 	 * Ignore errors, but use a timer so we don't
 	 * hang here forever in case of a bug. */
 	do_exit = 1;
-	timer_set(&hungTimer, MAX_TOT_TIME / 2);
+	timer_set(&hungTimer, tot_time / 2);
 	while(isAnyChildAlive() && !timer_timeout(&hungTimer)) {
 		high_load_manager();
 		maxSleep(timer_remaining(&hungTimer));

@@ -26,7 +26,7 @@
 
 //-------------------------------------------------------------
 #define CHILD_SPAWN_DELAY		150												// Delay in ms between spawned childrens
-#define MAX_LOAD_TIME			750												// Max time in ms we run with full load power consumption
+#define DFLT_LOAD_TIME			750												// Time in ms we run with full load power consumption
 
 enum child_state_t {
 	THREAD_NONE,
@@ -88,6 +88,7 @@ int high_load_init(void) {
 
 	timer_set(&spawnTimer, 0);
 	timer_set(&loadTimer, 9999999);
+	if(load_time < 1) load_time = DFLT_LOAD_TIME;								// Command line argument from user?
 	parentThread = pthread_self();
 
 	// Check what features the compiler has
@@ -623,7 +624,7 @@ int high_load_manager(void) {
 			if(hasAllChildsStarted()) {
 				hasFullLoad = 1;
 				printf("Power consumption test in progress...\n");
-				timer_set(&loadTimer, MAX_LOAD_TIME);
+				timer_set(&loadTimer, load_time);
 			}
 			else  {
 				/* Time to spawn another child? We need some
