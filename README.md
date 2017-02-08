@@ -1,11 +1,7 @@
 # rpiburn
 Heavy load power supply testing while monitoring system for anomalies.
 
-*rpiburn* is a tool for *Raspberry Pi* hardware testing. It will make the
-board to consume as much current as possible, but aborts if the processor
-becomes overheated or a brownout (under voltage) condition occur. Note
-that **board** consumption is of interest. This is not necessarily the same
-as maxing out the processor (although that's used too).
+*rpiburn* is a tool for *Raspberry Pi* hardware testing. It will make the board to consume as much current as possible, but aborts if the processor becomes overheated, a brownout (under voltage) condition occur or something else bad happens. Note that **board** consumption is of interest! This is not necessarily the same as maxing out the processor (although that's used too).
 
 ### Measured values
 | Pi model | Current (mA)                    |
