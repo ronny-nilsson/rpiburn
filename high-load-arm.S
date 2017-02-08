@@ -10,74 +10,91 @@
  */
 
 
-
 		.syntax divided
 		.section .text
 		.arm
 
 
 @-------------------------------------------------------------
-@ Power consumer for ARM Cortex-A7
-		.align 7
-		.func burn_cpu_a53
-		.type burn_cpu_a53, %function
-		.global burn_cpu_a53
-burn_cpu_a53:
-		push	{r4, r5, fp, lr}												@ Prologue
-		add		fp, sp, #12
+@ Power consumer for ARM32 with Neon
+		.align 2
+		.func burn_cpu_neon
+		.type burn_cpu_neon, %function
+		.global burn_cpu_neon
+burn_cpu_neon:
+		push		{r4, r5, fp, lr}											@ Prologue
+#if defined(__ARM_NEON__) || defined(__ARM_NEON)
+		add			fp, sp, #12
+		vpush		{q4-q5}
 
 		@ Create a pointer to code ram
-		adr		r1, burn_cpu_a7
+		adr			r1, pLabels
+		pld			[r1]
+		add			r1, r1, #1
+		mov			r2, #0
 
 		/* Create a pointer to data ram, which also
 		 * happens to be the same location as our C
 		 * code global "break out of loop" flag. */
-		ldr     r5, name2adr
- 		sub		r5, r5, #4
-		ldr		r3, [r5, #1]
+		ldr     	r5, pExit
+		sub			r5, r5, #4
+		pld			[r5]
+
+		@ Static Neon data for high workload
+        vmov.u32	q1, #0
+        vmov.u32	q2, #0xffffffff
+        vmov.u32	q4, #0xf0f0f0f0
+        vmov.u32	q5, #0x0f0f0f0f
 
 		/* Tight loop where we alternate reading
 		 * unaligned data from both code and data
-		 * ram. 2 instructions per cycle. Code
-		 * alignment has impact. */
+		 * ram, combined with Neon calculations. */
 		b		1f
 		.align 7
-1:		movs	r2, r3
-		ldr		r3, [r5, #1]													@ Poll do_exit, time to exit loop?
-		ldr		r0, [r1, #1]
-		beq		1b
+1:		ldr			r3, [r5, #1]												@ Poll do_exit, time to exit loop?
+		vabd.u32	q0, q1, q2
+		ldr			r0, [r1, r2, lsl #2]!
+		vaba.u32	q3, q4, q5
+		movs		r2, r3
+		beq			1b
 
-		movne	r0, #0
-		moveq	r0, #1
-		pop		{r4, r5, fp, pc}												@ Epilogue
+		movne		r0, #0														@ EXIT_SUCCESS
+		moveq		r0, #1														@ EXIT_FAILURE
+		vpop		{q4-q5}
+#else
+		mov			r0, #1														@ EXIT_FAILURE
+#endif
+		pop			{r4, r5, fp, pc}											@ Epilogue
 		.endfunc
 
 
+
 @-------------------------------------------------------------
-@ Power consumer for ARM Cortex-A7
-		.align	7
-		.func	burn_cpu_a7
-		.type	burn_cpu_a7, %function
-		.global	burn_cpu_a7
-burn_cpu_a7:
+@ Power consumer for ARM32
+		.align	2
+		.func	burn_cpu_arm
+		.type	burn_cpu_arm, %function
+		.global	burn_cpu_arm
+burn_cpu_arm:
 		push	{r4, r5, r6, r7, fp, lr}										@ Prologue
 		add		fp, sp, #12
 
 		@ Create a pointer to code ram
-		adr		r1, burn_cpu_a7
+		adr		r1, pLabels
 		pld		[r1]
 
 		/* Create a pointer to data ram, which also
 		 * happens to be the same location as our C
 		 * code global "break out of loop" flag. */
-		ldr     r5, name2adr
+		ldr		r5, pExit
  		sub		r5, r5, #4
 		pld		[r5]
 
-		/* Tight loop where we alternate reading
-		 * unaligned data from both code and data
-		 * ram. Two instructions per cycle. Code
-		 * alignment has impact. */
+		/* Tight low latency optimized loop where
+		 * we alternate reading unaligned data from
+		 * both code and data ram. Two instructions
+		 * per cycle by Cortex-A7 and one by ARM11.
+		 * Code alignment has impact. */
 		mov		r3, #0
 		b		1f
 		.align	7
@@ -96,13 +113,15 @@ burn_cpu_a7:
 		.endfunc
 
 
+
 @-------------------------------------------------------------
-@ Name to address mapping for global C variables
-        .align  2
-name2adr:
-        .word   do_exit
-
-
+@ Name to address mapping for global C variables and
+@ cache line aligned code ram dummy data.
+		.align  7
+pLabels:.word   0
+pExit:	.word   do_exit
+		.align  5
+		.word	0
 
 
 @-------------------------------------------------------------
@@ -116,7 +135,6 @@ name2adr:
 		.size do_exit, 1
 		.global do_exit
 		.word 0
-do_exit:
-		.word 0
+do_exit:.word 0
 
 
