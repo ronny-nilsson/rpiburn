@@ -62,6 +62,10 @@ static struct timespec spawnTimer;												// When to spawn a child next time
 static int maxChilds;															// Number of childs to spawn
 static int nCpus;																// Number of processor cores in system
 static enum cpuid_t cpuId;														// System processor ID
+static const char* cpuName;														// System processor name (text)
+static int osHasNeon;															// True when the operating system ARM Neon support
+static int ccHasArm;															// True when compiler has ARM 32-bit support
+static int ccHasNeon;															// True when compiler has ARM Neon support
 static int hasFullLoad;															// True when we are consuming maximum power
 static struct timespec loadTimer;
 static pthread_t parentThread;													// Posix thread ID of parent
@@ -70,7 +74,8 @@ static pthread_t parentThread;													// Posix thread ID of parent
 //-------------------------------------------------------------
 static int identify_cpu(void);
 int burn_cpu_generic(struct child_t *me);
-extern int burn_cpu_a7(struct child_t *me);
+extern int burn_cpu_neon(struct child_t *me);
+extern int burn_cpu_arm(struct child_t *me);
 int idle_cpu(struct child_t *me);
 int dump_sdcard(struct child_t *me);
 
@@ -81,9 +86,17 @@ int dump_sdcard(struct child_t *me);
 int high_load_init(void) {
 	int i;
 
-	timer_set(&spawnTimer, CHILD_SPAWN_DELAY);
+	timer_set(&spawnTimer, 0);
 	timer_set(&loadTimer, 9999999);
 	parentThread = pthread_self();
+
+	// Check what features the compiler has
+#if defined(__ARMEL__) || defined( __ARM_EABI__)
+	ccHasArm = 1;																// True when compiler has ARM 32-bit support
+#endif
+#if defined(__ARM_NEON__) || defined(__ARM_NEON)
+	ccHasNeon = 1;																// True when compiler has ARM Neon support
+#endif
 
 	if(identify_cpu()) return -1;
 
@@ -96,15 +109,14 @@ int high_load_init(void) {
 		CPU_ZERO(&childs[i].cpuMask);
 		CPU_SET(i % nCpus, &childs[i].cpuMask);
 		childs[i].exitStatus = -1;
-		switch(cpuId) {
-			case CPU_BCM2835:
-				childs[i].consumer = burn_cpu_generic;
-				break;
-			case CPU_BCM2836:
-			case CPU_BCM2837:
-			default:
-				childs[i].consumer = burn_cpu_a7;
-				break;
+
+		if(cpuId == CPU_BCM2836) osHasNeon = 0;									// Ignore Neon in Cortex A7, it's to slow.
+		if(ccHasArm) {															// ARM processor? Then use asm optimizations.
+			childs[i].consumer = (ccHasNeon && osHasNeon) ?						// Both compile time and run time Neon support?
+				burn_cpu_neon : burn_cpu_arm;
+		}
+		else {
+			childs[i].consumer = burn_cpu_generic;
 		}
 	}
 	childs[nCpus].consumer = dump_sdcard;
@@ -191,19 +203,19 @@ out:
 //-------------------------------------------------------------
 // Identify the system processor by parsing the file
 // /proc/cpuinfo and extracting the 'CPU part' record.
-// List of values used by Raspberry Pi:
+// List of values used by ARM:
 //   BCM2708 BCM2835 ARM1176JZF-S == 0xb76
 //   BCM2709 BCM2836 Cortex-A7 MPCore == 0xc07
 //   BCM2710 BCM2837 Cortex-A53 MPCore == 0xd03
 // Common for all are 'CPU implementer' == 0x41
 static int identify_cpu(void) {
 	char *begin, *end, *buf;
-	const char *cpuName;
 	int res;
 
 	res = 0;
 	buf = NULL;
 	cpuId = CPU_UNKNOWN;
+	cpuName = "unknown";
 	nCpus = sysconf(_SC_NPROCESSORS_ONLN);
 	if(nCpus < 1) return -1;
 
@@ -218,28 +230,35 @@ static int identify_cpu(void) {
 	if(!res && buf && begin && end) {
 		*end = 0;																// Null terminate string
 		begin = strrchr(begin, ':');											// Find filed separator
-		if(begin && sscanf(begin + 1, "%i", &res) == 1 && res > 0) cpuId = res;	// strtol() but with auto base
-
-		switch(res) {
-			case 0xb76:
-				cpuId = CPU_BCM2835;
-				cpuName = "BCM2835";
-				break;
-			case 0xc07:
-				cpuId = CPU_BCM2836;
-				cpuName = "BCM2836";
-				break;
-			case 0xd03:
-				cpuId = CPU_BCM2837;
-				cpuName = "BCM2837";
-				break;
-			default:
-				cpuId = CPU_UNKNOWN;
-				cpuName = "unknown";
-				break;
+		if(begin && sscanf(begin + 1, "%i", &res) == 1 && res > 0) {			// strtol() but with auto base
+			switch(res) {
+				case 0xb76:
+					cpuId = CPU_BCM2835;
+					cpuName = "BCM2835";
+					break;
+				case 0xc07:
+					cpuId = CPU_BCM2836;
+					cpuName = "BCM2836";
+					break;
+				case 0xd03:
+					cpuId = CPU_BCM2837;
+					cpuName = "BCM2837";
+					break;
+				default:
+					break;
+			}
 		}
-		printf("System processor is %s\n", cpuName);
+		printf("Preparing %s system processor...\n", cpuName);
+		res = 0;
 	}
+
+	// Does the CPU as well as the OS have ARM Neon support?
+	if(!res && buf) {
+		res = grep(buf,
+			"^Features[[:space:]]*:[[:space:]]?[[:alnum:][:space:]]*neon[[:space:]]?",
+			(const char **) &begin, (const char **) &end);
+	}
+	osHasNeon = !res && buf && begin && end;
 
 	free(buf);																	// Allocated in read_cpuinfo()
 
