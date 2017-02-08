@@ -7,7 +7,7 @@
  *   Pi model    Current
  *      1B+      280 mA
  *      2B       650 mA
- *      3B       1260 mA with Neon and 830 mA without
+ *      3B       1300 mA with Neon and 830 mA without
  *
  * Nard Linux SDK
  * http://www.arbetsmyra.dyndns.org/nard
