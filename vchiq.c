@@ -239,7 +239,7 @@ static int vchiq_receive_string(void) {
 
 
 //-------------------------------------------------------------
-// Return true if we have a brown out situation
+// Return true if we have a voltage brown out situation
 int hasBrownOut(void) {
 	/* The bits in firmware throttled value represent:
 	 *   0: under-voltage
@@ -251,6 +251,14 @@ int hasBrownOut(void) {
 	 * We check a saved value where the bits are only set,
 	 * never cleared. */
 	return ((throttSaved & 1u) ? 1 : 0);
+}
+
+
+
+//-------------------------------------------------------------
+// Return true if processor has become to hot.
+int isHeated(void) {
+	return ((throttSaved & 6u) ? 1 : 0);
 }
 
 

@@ -7,6 +7,7 @@
  *   Pi model    Current
  *      1B+      280 mA
  *      2B       650 mA
+ *      3B       1260 mA with Neon and 830 mA without
  *
  * Nard Linux SDK
  * http://www.arbetsmyra.dyndns.org/nard
@@ -190,14 +191,15 @@ int main(void) {
 
 		if(!res) res = vchiq_manager();
 		if(hasBrownOut()) do_exit = 1;
+		if(isHeated()) do_exit = 1;
 		if(!res) res = high_load_manager();
 		if(!res) res = ioExchange();
 	}
-	if(res) do_exit = 1;
 	
 	/* When time to exit, wait for all childrens to die.
 	 * Ignore errors, but use a timer so we don't
 	 * hang here forever in case of a bug. */
+	do_exit = 1;
 	timer_set(&hungTimer, MAX_TOT_TIME / 2);
 	while(isAnyChildAlive() && !timer_timeout(&hungTimer)) {
 		high_load_manager();
@@ -211,6 +213,10 @@ int main(void) {
 	if(hasBrownOut()) {
 		printf("Warning, PSU brown out!\n");
 		return 30;																// Same as SIGPWR
+	}
+	else if(isHeated()) {
+		printf("Warning, overheated!\n");
+		return 70;
 	}
 	else if(res) {
 		return EXIT_FAILURE;
