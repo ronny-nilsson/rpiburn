@@ -78,6 +78,7 @@ extern int burn_cpu_neon(struct child_t *me);
 extern int burn_cpu_arm(struct child_t *me);
 int idle_cpu(struct child_t *me);
 int dump_sdcard(struct child_t *me);
+static int hasAllChildsStarted(void);
 
 
 
@@ -308,6 +309,9 @@ int dump_sdcard(struct child_t *me) {
 	sdFd = open("/dev/mmcblk0", O_RDONLY | O_LARGEFILE | O_NOATIME);
 	if(sdFd == -1 || sdFd == 0) {
 		perror("Error opening SD card block device");
+		if(errno == EACCES && geteuid() != 0) {
+			fprintf(stderr, "You need to become root!\n");
+		}
 		return EXIT_FAILURE;
 	}
 
@@ -521,11 +525,7 @@ static int collect_child_exit(void) {
 			//printf("Collected child %lu exit status %d\n",
 			//	childs[i].thread, childs[i].exitStatus);
 			maxSleep(0);
-			if(childs[i].exitStatus) {
-				printf("Child %lu exit error %d\n", childs[i].thread,
-					childs[i].exitStatus);
-				return -1;
-			}
+			if(childs[i].exitStatus) return -1;
 		}
 	}
 
@@ -557,7 +557,7 @@ int isAnyChildAlive(void) {
 
 //-------------------------------------------------------------
 // Returns true when all childrens have been started
-int hasAllChildsStarted(void) {
+static int hasAllChildsStarted(void) {
 	int i;
 
 	for(i = 0; i < maxChilds; i++) {
@@ -572,6 +572,24 @@ int hasAllChildsStarted(void) {
 
 	return 1;
 }
+
+
+
+//-------------------------------------------------------------
+// Returns true if any child got a problem and terminated
+static int hasAnyChildAborted(void) {
+	int i;
+
+	for(i = 0; i < maxChilds; i++) {
+		if(child_state(i) == THREAD_HALTED &&
+				childs[i].exitStatus == EXIT_FAILURE) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 
 
 //-------------------------------------------------------------
@@ -613,6 +631,9 @@ int high_load_manager(void) {
 	if(timer_timeout(&loadTimer)) {
 		do_exit = 1;
 	}
+	else if(hasAnyChildAborted()) {
+		res = -1;
+	}
 	else {
 		maxSleep(timer_remaining(&loadTimer));
 		if(do_exit) res = -1;
@@ -623,12 +644,12 @@ int high_load_manager(void) {
 			if(!isAnyChildAlive()) res = -1;
 		}
 		else {
-			if(hasAllChildsStarted()) {
+			if(hasAllChildsStarted() && timer_timeout(&spawnTimer)) {
 				hasFullLoad = 1;
 				printf("Power consumption test in progress...\n");
 				timer_set(&loadTimer, load_time);
 			}
-			else  {
+			else {
 				/* Time to spawn another child? We need some
 				 * delay between them due to the Raspberry
 				 * firmware polls the brown out sensor only
@@ -637,7 +658,7 @@ int high_load_manager(void) {
 				if(timer_timeout(&spawnTimer)) {
 					res = child_spawn();
 					timer_set(&spawnTimer, CHILD_SPAWN_DELAY);
-				} 
+				}
 				maxSleep(timer_remaining(&spawnTimer));
 			}
 		}

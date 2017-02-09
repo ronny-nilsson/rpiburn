@@ -10,7 +10,6 @@ int load_time;																	// Number of milliseconds we run with full load
 //-------------------------------------------------------------
 int high_load_init(void);
 int isAnyChildAlive(void);
-int hasAllChildsStarted(void);
 int kill_remaining_childs(void);
 int high_load_manager(void);
 
