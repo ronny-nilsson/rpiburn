@@ -15,5 +15,5 @@ rpiburn is a tool for heavy load Raspberry Pi hardware testing. It will make the
 
 ### Copyright
 rpiburn is part of [Nard SDK](http://www.arbetsmyra.dyndns.org/nard/ "Nard SDK")   
-&copy; 2017 Ronny Nilsson
+&copy; 2014-2017 Ronny Nilsson, 2013 Siarhei Siamashka
 

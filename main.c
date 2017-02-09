@@ -43,6 +43,7 @@
 //-------------------------------------------------------------
 static int sigFd = -1;															// Signal file descriptor
 static int tot_time;															// Run for this many millisecons maximum
+static const char progVer[] = "v0.1";											// Program version
 
 
 //-------------------------------------------------------------
@@ -124,15 +125,16 @@ static int parse_args(int argc, char *argv[]) {
 
 	opterr=0;																	// Disable lib error msg's
 
-	while((arg=getopt(argc, argv, ":ht:")) != -1 && !res) {
+	while((arg=getopt(argc, argv, ":ht:v")) != -1 && !res) {
 		switch(arg) {
 			case 'h':
-				printf("Usage: %s [options]\n", argv[0]);
+				printf("Usage: rpiburn [options]\n");
 				printf("High power load testing of Raspberry Pi while ");
 				printf("monitoring system for anomalies.\n");
 				printf("\n");
 				printf("    -h          This help\n");
 				printf("    -t <msec>   Run test for <msec> milliseconds.\n");
+				printf("    -v          Display program version and copyrights\n");
 				res = -1;
 				break;
 
@@ -147,6 +149,13 @@ static int parse_args(int argc, char *argv[]) {
 					load_time = arg;
 					tot_time = arg * 2 + 3000;									// Is divided by two later and add extra
 				}																//  marging for hung task timeout.
+				break;
+
+			case 'v':
+				printf("rpiburn %s\n", progVer);
+				printf("Copyright (C) 2014-2017 Ronny Nilsson, ");
+				printf("2013 Siarhei Siamashka\n");
+				res = -1;
 				break;
 
 			case ':':															// Errorhandling
