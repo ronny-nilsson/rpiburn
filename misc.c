@@ -198,7 +198,7 @@ void maxSleep(const int ms) {
 int grep(const char *haystack, const char *regExpr, const char **matchedBegin, const char **matchedEnd) {
 	regmatch_t match;
 	regex_t regCmp;
-	int res, i;
+	int res;
 
 	if(matchedBegin) *matchedBegin = NULL;
 	if(matchedEnd) *matchedEnd = NULL;
@@ -217,7 +217,7 @@ int grep(const char *haystack, const char *regExpr, const char **matchedBegin, c
 	memset(&match, 0, sizeof(match));
 	res = regexec(&regCmp, haystack, 1, &match, 0);
 	if(res == REG_NOMATCH) {
-		printf("No grep match\n");
+		//printf("No grep match\n");
 		res = -1;
 	}
 	else if(res) {
@@ -227,6 +227,7 @@ int grep(const char *haystack, const char *regExpr, const char **matchedBegin, c
 		res = -1;
 	}
 	else {
+		//int i;
 		//printf("Found match at %d: ", match.rm_so);
 		//for(i = match.rm_so; i <= match.rm_eo; i++) putchar(haystack[i]);
 		//if(haystack[i-1] != '\n') putchar('\n');

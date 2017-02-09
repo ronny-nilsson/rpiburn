@@ -222,6 +222,7 @@ static int identify_cpu(void) {
 
 	res = read_cpuinfo(&buf);													// Fill buffer
 
+	begin = end = NULL;
 	if(!res && buf) {
 		res = grep(buf,
 			"^cpu part[[:space:]]*:[[:space:]]*(0x)?[[:xdigit:]]+$",			// Search with regular expression
@@ -254,12 +255,13 @@ static int identify_cpu(void) {
 	}
 
 	// Does the CPU as well as the OS have ARM Neon support?
+	begin = end = NULL;
 	if(!res && buf) {
 		res = grep(buf,
 			"^Features[[:space:]]*:[[:space:]]?[[:alnum:][:space:]]*neon[[:space:]]?",
 			(const char **) &begin, (const char **) &end);
 	}
-	osHasNeon = !res && buf && begin && end;
+	osHasNeon = !res && buf && begin && end;									// Flag true if match was found
 
 	free(buf);																	// Allocated in read_cpuinfo()
 
