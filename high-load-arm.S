@@ -41,10 +41,10 @@ burn_cpu_neon:
 		pld			[r5]
 
 		@ Static Neon data for high workload
-        vmov.u32	q1, #0
-        vmov.u32	q2, #0xffffffff
-        vmov.u32	q4, #0xf0f0f0f0
-        vmov.u32	q5, #0x0f0f0f0f
+		vmov.u32	q1, #0
+		vmov.u32	q2, #0xffffffff
+		vmov.u32	q4, #0xf0f0f0f0
+		vmov.u32	q5, #0x0f0f0f0f
 
 		/* Tight loop where we alternate reading
 		 * unaligned data from both code and data
