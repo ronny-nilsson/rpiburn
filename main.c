@@ -270,7 +270,7 @@ int main(int argc, char *argv[]) {
 	vchiq_close();
 
 	if(hasBrownOut()) {
-		printf("Warning, PSU brown out!\n");
+		printf("Warning, PSU brownout!\n");
 		return 30;																// Same as SIGPWR
 	}
 	else if(isHeated()) {

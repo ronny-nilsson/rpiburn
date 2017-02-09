@@ -10,6 +10,10 @@ Heavy load power supply testing while monitoring system for anomalies.
 | 2B       | 650                             |
 | 3B       | 1300 with Neon and 830 without  |
 
-*rpiburn* is part of [Nard SDK](http://www.arbetsmyra.dyndns.org/nard/ "Nard SDK")   
-Copyright &copy; Ronny Nilsson
+### Disclaimer
+:warning: Use at your own risk! This program overheats a RPi 3 in just 10 seconds. :fire:
+
+### Copyright
+rpiburn is part of [Nard SDK](http://www.arbetsmyra.dyndns.org/nard/ "Nard SDK")   
+&copy; 2017 Ronny Nilsson
 
