@@ -43,7 +43,7 @@
 //-------------------------------------------------------------
 static int sigFd = -1;															// Signal file descriptor
 static int tot_time;															// Run for this many millisecons maximum
-static const char progVer[] = "v0.1";											// Program version
+static const char progVer[] = "v0.10";											// Program version
 
 
 //-------------------------------------------------------------
