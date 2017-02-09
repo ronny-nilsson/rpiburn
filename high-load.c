@@ -275,7 +275,7 @@ static int identify_cpu(void) {
 // Power consumer: generate random numbers in a loop
 // until told to exit.
 int burn_cpu_generic(struct child_t *me) {
-	volatile int dummy;
+	volatile int dummy __attribute__ ((unused));
 
 	// Burn cpu! :)
 	while(!do_exit) {
