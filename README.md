@@ -11,7 +11,7 @@ rpiburn is a tool for heavy load Raspberry Pi hardware testing. It will make the
 | 3B       | 1300 with Neon and 830 without  |
 
 ### Disclaimer
-:warning: Use at your own risk! This program overheats a RPi 3 in just 10 seconds. :exclamation:
+:warning: Use at your own risk! This program overheats a RPi 3 in just 10 seconds. :smiley:
 
 ### Copyright
 rpiburn is part of [Nard SDK](http://www.arbetsmyra.dyndns.org/nard/ "Nard SDK")   
