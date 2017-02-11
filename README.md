@@ -6,7 +6,7 @@ rpiburn is a tool for heavy load Raspberry Pi hardware testing. It will make the
 ### Measured values
 | Pi model | Current (mA)                    |
 | -------- | ------------------------------- |
-| 1B+      | 280                             |
+| 1B+      | 320                             |
 | 2B       | 650                             |
 | 3B       | 1300 with Neon and 830 without  |
 

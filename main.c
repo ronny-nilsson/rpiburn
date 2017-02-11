@@ -5,7 +5,7 @@
  *
  * Measured values (without external peripherals)
  *   Pi model    Current
- *      1B+      280 mA
+ *      1B+      320 mA
  *      2B       650 mA
  *      3B       1300 mA with Neon and 830 mA without
  *
