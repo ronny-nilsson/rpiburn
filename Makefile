@@ -6,7 +6,7 @@ OBJECTS += vchiq.o high-load-arm.o
 name := rpiburn
 
 
-CFLAGS += $(CROSS_CFLAGS) -O2 -g -Wall -std=gnu99
+CFLAGS += $(CROSS_CFLAGS) -O2 -g -Wall -std=gnu99 -D_DEFAULT_SOURCE
 CFLAGS += -D_GNU_SOURCE -D_BSD_SOURCE -D_REENTRANT -pthread
 CFLAGS += -fno-reorder-blocks -fno-reorder-blocks-and-partition
 CFLAGS += -fno-toplevel-reorder -fno-crossjumping -falign-functions
