@@ -648,6 +648,7 @@ int high_load_manager(void) {
 				hasFullLoad = 1;
 				printf("Power consumption test in progress...\n");
 				timer_set(&loadTimer, load_time);
+				maxSleep(load_time);
 			}
 			else {
 				/* Time to spawn another child? We need some
